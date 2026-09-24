@@ -443,8 +443,14 @@ class TrackerApp {
                 parsed = { ...parsed, ...raw };
                 
                 // Data Migrations
+                if (!parsed.taskLibrary) parsed.taskLibrary = [];
                 parsed.taskLibrary.forEach(t => { if(!t.maxCount) t.maxCount = 1; });
+                
+                if (!parsed.characters) parsed.characters = [];
                 parsed.characters.forEach(c => {
+                    // 防呆修復：確保舊資料或損毀的資料一定擁有 tasks 陣列
+                    if (!c.tasks) c.tasks = []; 
+                    
                     c.tasks.forEach(t => {
                         if (t.progress === undefined) {
                             t.progress = t.completed ? 1 : 0;
@@ -1495,8 +1501,8 @@ class TrackerApp {
     }
 }
 
-// Initialize Application
-const app = new TrackerApp();
+// Initialize Application - 強制綁定至 window 確保跨環境的所有 onclick 事件都能成功呼叫
+window.app = new TrackerApp();
 
 </script>
 </body>
