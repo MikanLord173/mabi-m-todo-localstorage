@@ -525,14 +525,23 @@ class TrackerApp {
     }
 
     setupEventListeners() {
+        // 監聽來自其他分頁的資料變更，實現跨分頁即時同步
+        window.addEventListener('storage', (e) => {
+            if (e.key === STORAGE_KEY) {
+                this.data = this.loadData();
+                this.render();
+            }
+        });
+
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('tab-active', 'text-blue-600'));
                 document.querySelectorAll('.tab-btn').forEach(b => b.classList.add('text-gray-500'));
-                e.target.classList.remove('text-gray-500');
-                e.target.classList.add('tab-active');
+                // 改用 currentTarget 確保點擊判斷永遠準確
+                e.currentTarget.classList.remove('text-gray-500');
+                e.currentTarget.classList.add('tab-active');
                 
-                this.switchView(e.target.dataset.target);
+                this.switchView(e.currentTarget.dataset.target);
             });
         });
 
@@ -577,15 +586,17 @@ class TrackerApp {
         this.currentView = viewId;
         document.querySelectorAll('.view-section').forEach(sec => sec.classList.add('hidden'));
         document.getElementById(`view-${viewId}`).classList.remove('hidden');
+        // 切換畫面時不再侷限更新單一視圖
         this.render();
     }
 
     render() {
-        if (this.currentView === 'overview') this.renderOverview();
-        if (this.currentView === 'dashboard') this.renderDashboard();
-        if (this.currentView === 'server') this.renderServer();
-        if (this.currentView === 'characters') this.renderCharacters();
-        if (this.currentView === 'tasks') this.renderTaskLibrary();
+        // 全域同步渲染：確保任何進度變動，都會同時更新到所有隱藏或顯示中的頁籤
+        this.renderOverview();
+        this.renderDashboard();
+        this.renderServer();
+        this.renderCharacters();
+        this.renderTaskLibrary();
     }
 
     renderOverview() {
