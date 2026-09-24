@@ -1,0 +1,1437 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>瑪奇M 待辦事項追蹤器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    <style>
+        /* Custom scrollbar and general styling */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background-color: #f8fafc; color: #334155; }
+        .tab-active { border-bottom: 2px solid #3b82f6; color: #3b82f6; font-weight: 600; }
+        .character-card { transition: all 0.2s ease; }
+        .character-card:hover { transform: translateY(-2px); box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
+        
+        /* Drag and drop styling */
+        .ghost-item { opacity: 0.5; background: #e2e8f0; }
+        
+        /* Priority colors */
+        .priority-high { border-left-color: #ef4444 !important; }
+        .priority-medium { border-left-color: #f59e0b !important; }
+        .priority-low { border-left-color: #10b981 !important; }
+        
+        /* Modals */
+        .modal-overlay { background-color: rgba(0, 0, 0, 0.5); backdrop-filter: blur(2px); }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+<!-- Header -->
+<header class="bg-white shadow-sm sticky top-0 z-10">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+        <div class="flex items-center gap-3">
+            <div class="bg-blue-600 text-white p-2 rounded-lg">
+                <i class="fas fa-clipboard-list text-xl"></i>
+            </div>
+            <h1 class="text-xl font-bold text-gray-900 hidden sm:block">瑪奇M 待辦追蹤器</h1>
+        </div>
+        <div class="flex items-center gap-4 text-sm text-gray-500">
+            <div id="reset-info" class="text-right">
+                <div><i class="fas fa-clock mr-1"></i>下一次重置: <span id="next-reset-time" class="font-medium text-gray-700">計算中...</span></div>
+            </div>
+            <button onclick="app.showSettingsModal()" class="p-2 text-gray-400 hover:text-gray-600 transition-colors rounded-full hover:bg-gray-100">
+                <i class="fas fa-cog text-lg"></i>
+            </button>
+        </div>
+    </div>
+    
+    <!-- Tabs -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <nav class="flex space-x-8 overflow-x-auto no-scrollbar" id="main-tabs">
+            <button class="tab-btn tab-active pb-3 pt-2 px-1 whitespace-nowrap" data-target="overview">任務一覽</button>
+            <button class="tab-btn text-gray-500 hover:text-gray-700 pb-3 pt-2 px-1 whitespace-nowrap" data-target="dashboard">各角色看板</button>
+            <button class="tab-btn text-gray-500 hover:text-gray-700 pb-3 pt-2 px-1 whitespace-nowrap" data-target="server">伺服器共通</button>
+            <button class="tab-btn text-gray-500 hover:text-gray-700 pb-3 pt-2 px-1 whitespace-nowrap" data-target="characters">角色管理</button>
+            <button class="tab-btn text-gray-500 hover:text-gray-700 pb-3 pt-2 px-1 whitespace-nowrap" data-target="tasks">事項庫設定</button>
+        </nav>
+    </div>
+</header>
+
+<!-- Main Content -->
+<main class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
+    
+    <!-- Overview View (Matrix) -->
+    <section id="view-overview" class="view-section">
+        <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-4">
+            <h2 class="text-2xl font-bold text-gray-800 shrink-0">任務一覽</h2>
+            <div class="flex flex-col sm:flex-row gap-3 xl:ml-auto w-full xl:w-auto overflow-x-auto pb-1">
+                <div class="flex gap-4 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm whitespace-nowrap flex-shrink-0">
+                    <div class="flex gap-3 items-center border-r border-gray-100 pr-4">
+                        <span class="text-gray-500 font-bold text-xs"><i class="fas fa-clock mr-1"></i>性質</span>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-sm text-gray-700"><input type="checkbox" class="filter-cb w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" data-view="overview" data-cat="type" value="daily" checked>每日</label>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-sm text-gray-700"><input type="checkbox" class="filter-cb w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" data-view="overview" data-cat="type" value="weekly" checked>每週</label>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-sm text-gray-700"><input type="checkbox" class="filter-cb w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" data-view="overview" data-cat="type" value="once" checked>一次性</label>
+                    </div>
+                    <div class="flex gap-3 items-center pl-1">
+                        <span class="text-gray-500 font-bold text-xs"><i class="fas fa-star mr-1"></i>重要度</span>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-sm text-gray-700"><input type="checkbox" class="filter-cb w-4 h-4 text-red-500 rounded border-gray-300 focus:ring-red-500" data-view="overview" data-cat="prio" value="high" checked>高</label>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-sm text-gray-700"><input type="checkbox" class="filter-cb w-4 h-4 text-amber-500 rounded border-gray-300 focus:ring-amber-500" data-view="overview" data-cat="prio" value="medium" checked>中</label>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-sm text-gray-700"><input type="checkbox" class="filter-cb w-4 h-4 text-green-500 rounded border-gray-300 focus:ring-green-500" data-view="overview" data-cat="prio" value="low" checked>低</label>
+                    </div>
+                </div>
+                <button onclick="app.completeAllSelected()" class="bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 px-4 py-2 rounded-lg text-sm font-bold transition-colors flex-shrink-0 flex items-center h-[38px] mt-0.5 sm:mt-0">
+                    <i class="fas fa-check-double mr-1.5"></i>全部完成
+                </button>
+            </div>
+        </div>
+        <div id="overview-matrix-container" class="relative w-full">
+            <!-- Matrix table will be rendered here -->
+        </div>
+    </section>
+
+    <!-- Dashboard View (Individual Characters) -->
+    <section id="view-dashboard" class="view-section hidden">
+        <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-4">
+            <h2 class="text-2xl font-bold text-gray-800 shrink-0">各角色看板</h2>
+            <div class="flex flex-col sm:flex-row gap-3 xl:ml-auto w-full xl:w-auto overflow-x-auto pb-1">
+                <div class="flex gap-4 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm whitespace-nowrap flex-shrink-0">
+                    <div class="flex gap-3 items-center border-r border-gray-100 pr-4">
+                        <span class="text-gray-500 font-bold text-xs"><i class="fas fa-clock mr-1"></i>性質</span>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-sm text-gray-700"><input type="checkbox" class="filter-cb w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" data-view="dashboard" data-cat="type" value="daily" checked>每日</label>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-sm text-gray-700"><input type="checkbox" class="filter-cb w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" data-view="dashboard" data-cat="type" value="weekly" checked>每週</label>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-sm text-gray-700"><input type="checkbox" class="filter-cb w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" data-view="dashboard" data-cat="type" value="once" checked>一次性</label>
+                    </div>
+                    <div class="flex gap-3 items-center pl-1">
+                        <span class="text-gray-500 font-bold text-xs"><i class="fas fa-star mr-1"></i>重要度</span>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-sm text-gray-700"><input type="checkbox" class="filter-cb w-4 h-4 text-red-500 rounded border-gray-300 focus:ring-red-500" data-view="dashboard" data-cat="prio" value="high" checked>高</label>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-sm text-gray-700"><input type="checkbox" class="filter-cb w-4 h-4 text-amber-500 rounded border-gray-300 focus:ring-amber-500" data-view="dashboard" data-cat="prio" value="medium" checked>中</label>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-sm text-gray-700"><input type="checkbox" class="filter-cb w-4 h-4 text-green-500 rounded border-gray-300 focus:ring-green-500" data-view="dashboard" data-cat="prio" value="low" checked>低</label>
+                    </div>
+                </div>
+                <button onclick="app.completeAllSelected()" class="bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 px-4 py-2 rounded-lg text-sm font-bold transition-colors flex-shrink-0 flex items-center h-[38px] mt-0.5 sm:mt-0">
+                    <i class="fas fa-check-double mr-1.5"></i>全部完成
+                </button>
+            </div>
+        </div>
+
+        <div id="characters-dashboard" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Character Task Cards will be rendered here -->
+            <div class="col-span-full text-center py-12 text-gray-500 hidden" id="no-characters-msg">
+                <i class="fas fa-users-slash text-4xl mb-3 text-gray-300"></i>
+                <p>尚未建立任何角色。請前往「角色管理」新增角色。</p>
+                <button onclick="document.querySelector('[data-target=characters]').click()" class="mt-4 text-blue-600 hover:underline">前往建立</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Server Tasks View -->
+    <section id="view-server" class="view-section hidden">
+        <div class="flex flex-col xl:flex-row justify-between items-start xl:items-center mb-6 gap-4">
+            <div class="shrink-0">
+                <h2 class="text-2xl font-bold text-gray-800">伺服器共通</h2>
+                <p class="text-sm text-gray-500 mt-1">獨立於角色之外的帳號共通事項。</p>
+            </div>
+            <div class="flex flex-col sm:flex-row gap-3 xl:ml-auto w-full xl:w-auto overflow-x-auto pb-1">
+                <div class="flex gap-4 bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm whitespace-nowrap flex-shrink-0">
+                    <div class="flex gap-3 items-center border-r border-gray-100 pr-4">
+                        <span class="text-gray-500 font-bold text-xs"><i class="fas fa-clock mr-1"></i>性質</span>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-sm text-gray-700"><input type="checkbox" class="filter-cb w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" data-view="server" data-cat="type" value="daily" checked>每日</label>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-sm text-gray-700"><input type="checkbox" class="filter-cb w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" data-view="server" data-cat="type" value="weekly" checked>每週</label>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-sm text-gray-700"><input type="checkbox" class="filter-cb w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" data-view="server" data-cat="type" value="once" checked>一次性</label>
+                    </div>
+                    <div class="flex gap-3 items-center pl-1">
+                        <span class="text-gray-500 font-bold text-xs"><i class="fas fa-star mr-1"></i>重要度</span>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-sm text-gray-700"><input type="checkbox" class="filter-cb w-4 h-4 text-red-500 rounded border-gray-300 focus:ring-red-500" data-view="server" data-cat="prio" value="high" checked>高</label>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-sm text-gray-700"><input type="checkbox" class="filter-cb w-4 h-4 text-amber-500 rounded border-gray-300 focus:ring-amber-500" data-view="server" data-cat="prio" value="medium" checked>中</label>
+                        <label class="flex items-center gap-1.5 cursor-pointer text-sm text-gray-700"><input type="checkbox" class="filter-cb w-4 h-4 text-green-500 rounded border-gray-300 focus:ring-green-500" data-view="server" data-cat="prio" value="low" checked>低</label>
+                    </div>
+                </div>
+                <button onclick="app.completeAllSelected()" class="bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 px-4 py-2 rounded-lg text-sm font-bold transition-colors flex-shrink-0 flex items-center h-[38px] mt-0.5 sm:mt-0">
+                    <i class="fas fa-check-double mr-1.5"></i>全部完成
+                </button>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 max-w-4xl mx-auto flex flex-col">
+            <div class="flex justify-between items-end mb-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-12 h-12 rounded-xl bg-indigo-100 flex items-center justify-center text-indigo-600 text-2xl shadow-sm">
+                        <i class="fas fa-server"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold text-gray-900 leading-tight">伺服器共通任務</h3>
+                        <p class="text-sm text-gray-500">此清單的進度由整個帳號共享</p>
+                    </div>
+                </div>
+                <div class="text-right w-32">
+                    <span id="server-progress-text" class="text-2xl font-bold text-indigo-600">0%</span>
+                    <div class="w-full h-2 bg-gray-100 rounded-full mt-1 overflow-hidden">
+                        <div id="server-progress-bar" class="h-full bg-indigo-500 rounded-full transition-all duration-500" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="server-tasks-container" class="flex-grow">
+                <!-- Server Tasks render here -->
+            </div>
+            
+            <div class="mt-4 pt-4 border-t border-gray-100 flex justify-center">
+                <button onclick="app.showAssignTaskModal('server', 'server')" class="text-sm text-indigo-600 hover:text-indigo-800 font-medium px-4 py-2 flex items-center bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors">
+                    <i class="fas fa-plus-circle mr-2"></i> 從事項庫指派額外事項
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Characters View -->
+    <section id="view-characters" class="view-section hidden">
+        <div class="flex justify-between items-center mb-6">
+            <div>
+                <h2 class="text-2xl font-bold text-gray-800">角色管理</h2>
+                <p class="text-sm text-gray-500 mt-1">最多可建立 6 個角色。設定不同定位以獲得不同的任務建議。</p>
+            </div>
+            <button onclick="app.showAddCharacterModal()" id="btn-add-char" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm flex items-center">
+                <i class="fas fa-plus mr-2"></i>新增角色
+            </button>
+        </div>
+
+        <div id="characters-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Characters will be listed here -->
+        </div>
+    </section>
+
+    <!-- Tasks Library View -->
+    <section id="view-tasks" class="view-section hidden">
+        <div class="flex justify-between items-center mb-6">
+            <div>
+                <h2 class="text-2xl font-bold text-gray-800">事項庫設定</h2>
+                <p class="text-sm text-gray-500 mt-1">管理所有可分配的任務，並設定各角色的預設優先度。</p>
+            </div>
+            <button onclick="app.showAddTaskModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm flex items-center">
+                <i class="fas fa-plus mr-2"></i>新增任務
+            </button>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <!-- Task Filters -->
+            <div class="border-b border-gray-100 p-4 bg-gray-50 flex gap-4">
+                <button class="task-filter-btn px-4 py-1.5 rounded-full text-sm font-medium bg-blue-100 text-blue-700 transition-colors" data-type="all">全部</button>
+                <button class="task-filter-btn px-4 py-1.5 rounded-full text-sm font-medium text-gray-600 hover:bg-gray-200 transition-colors" data-type="daily">每日</button>
+                <button class="task-filter-btn px-4 py-1.5 rounded-full text-sm font-medium text-gray-600 hover:bg-gray-200 transition-colors" data-type="weekly">每週</button>
+                <button class="task-filter-btn px-4 py-1.5 rounded-full text-sm font-medium text-gray-600 hover:bg-gray-200 transition-colors" data-type="once">一次性</button>
+            </div>
+            
+            <!-- Task List -->
+            <div id="task-library-list" class="divide-y divide-gray-100">
+                <!-- Task items render here -->
+            </div>
+        </div>
+    </section>
+</main>
+
+<!-- Modals -->
+
+<!-- Add/Edit Character Modal -->
+<div id="modal-character" class="fixed inset-0 modal-overlay z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden transform transition-all">
+        <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+            <h3 class="text-lg font-bold text-gray-900" id="modal-char-title">新增角色</h3>
+            <button onclick="app.closeModal('modal-character')" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times text-xl"></i>
+            </button>
+        </div>
+        <form id="form-character" class="px-6 py-4 space-y-4">
+            <input type="hidden" id="char-id">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">角色名稱</label>
+                <input type="text" id="char-name" required class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="輸入角色名稱">
+            </div>
+            <div class="pt-4 flex justify-end gap-2">
+                <button type="button" onclick="app.closeModal('modal-character')" class="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50">取消</button>
+                <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">儲存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Add/Edit Task Modal -->
+<div id="modal-task" class="fixed inset-0 modal-overlay z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-lg overflow-hidden transform transition-all flex flex-col max-h-[90vh]">
+        <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center shrink-0">
+            <h3 class="text-lg font-bold text-gray-900" id="modal-task-title">新增事項</h3>
+            <button onclick="app.closeModal('modal-task')" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times text-xl"></i>
+            </button>
+        </div>
+        <div class="overflow-y-auto p-6 flex-grow">
+            <form id="form-task" class="space-y-5">
+                <input type="hidden" id="task-id">
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">事項名稱</label>
+                    <input type="text" id="task-name" required class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="例如: 困難地下城">
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">重置類型</label>
+                        <select id="task-type" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                            <option value="daily">每日 (06:00 重置)</option>
+                            <option value="weekly">每週 (週一 06:00 重置)</option>
+                            <option value="once">一次性 (不重置)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">最大達成次數</label>
+                        <input type="number" id="task-max-count" min="1" max="99" value="1" required class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="預設為 1">
+                    </div>
+                </div>
+
+                <!-- Character Assignments Setup -->
+                <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                    <h4 class="text-sm font-semibold text-gray-800 mb-3 flex items-center">
+                        <i class="fas fa-users mr-2 text-gray-500"></i>分配給角色/伺服器
+                    </h4>
+                    
+                    <div id="task-character-assignments" class="space-y-2 max-h-48 overflow-y-auto pr-1">
+                        <!-- Dynamic checkboxes will be rendered here -->
+                    </div>
+                    <p class="text-xs text-gray-500 mt-3"><i class="fas fa-info-circle mr-1"></i>勾選要執行的單位並設定對應的優先度。</p>
+                </div>
+            </form>
+        </div>
+        <div class="px-6 py-4 border-t border-gray-100 flex justify-end gap-2 shrink-0 bg-gray-50">
+            <button type="button" onclick="app.closeModal('modal-task')" class="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-white bg-transparent transition-colors">取消</button>
+            <button type="button" onclick="app.saveTask()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">儲存事項</button>
+        </div>
+    </div>
+</div>
+
+<!-- Assign Custom Task to Character Modal -->
+<div id="modal-assign-task" class="fixed inset-0 modal-overlay z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden transform transition-all">
+        <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+            <h3 class="text-lg font-bold text-gray-900">為 <span id="assign-char-name" class="text-blue-600"></span> 添加事項</h3>
+            <button onclick="app.closeModal('modal-assign-task')" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times text-xl"></i>
+            </button>
+        </div>
+        <div class="p-6">
+            <p class="text-sm text-gray-500 mb-4">從事項庫中選擇要指派給此角色的任務。</p>
+            <div id="available-tasks-list" class="space-y-2 max-h-60 overflow-y-auto pr-2">
+                <!-- Available tasks render here -->
+            </div>
+        </div>
+        <div class="px-6 py-4 border-t border-gray-100 bg-gray-50 text-right">
+             <button type="button" onclick="app.closeModal('modal-assign-task')" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">完成</button>
+        </div>
+    </div>
+</div>
+
+<!-- Settings/Reset Modal -->
+<div id="modal-settings" class="fixed inset-0 modal-overlay z-50 hidden flex items-center justify-center p-4">
+     <div class="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden transform transition-all">
+        <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+            <h3 class="text-lg font-bold text-gray-900">系統設定</h3>
+            <button onclick="app.closeModal('modal-settings')" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times text-xl"></i>
+            </button>
+        </div>
+        <div class="p-6 space-y-4">
+            <div>
+                <h4 class="text-sm font-semibold text-red-600 mb-2">危險區域</h4>
+                <button onclick="app.manualReset('daily')" class="w-full text-left px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 rounded border border-red-100 text-sm mb-2 transition-colors flex justify-between items-center">
+                    <span>手動觸發每日重置</span>
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+                <button onclick="app.manualReset('weekly')" class="w-full text-left px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 rounded border border-red-100 text-sm mb-2 transition-colors flex justify-between items-center">
+                    <span>手動觸發每週重置</span>
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+                <button onclick="app.clearAllData()" class="w-full text-left px-4 py-2 bg-gray-800 hover:bg-gray-900 text-white rounded text-sm transition-colors flex justify-between items-center mt-4">
+                    <span>清除所有資料</span>
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        </div>
+     </div>
+</div>
+
+<!-- Custom Alert/Confirm/Prompt Dialog -->
+<div id="modal-dialog" class="fixed inset-0 modal-overlay z-[100] hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden transform transition-all">
+        <div class="p-6">
+            <h3 class="text-lg font-bold text-gray-900 mb-2" id="dialog-title">提示</h3>
+            <p class="text-sm text-gray-600 mb-4 whitespace-pre-line" id="dialog-message"></p>
+            <div id="dialog-input-container" class="hidden mb-4">
+                <input type="text" id="dialog-input" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div class="flex justify-end gap-2 mt-2">
+                <button id="btn-dialog-cancel" class="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">取消</button>
+                <button id="btn-dialog-confirm" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">確定</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+/**
+ * Mabinogi Task Tracker Logic
+ */
+
+const STORAGE_KEY = 'mabiTrackerData_v1';
+const MAX_CHARACTERS = 6;
+
+// Task Type configuration
+const TYPE_CONFIG = {
+    'daily': { name: '每日', color: 'bg-blue-100 text-blue-700' },
+    'weekly': { name: '每週', color: 'bg-indigo-100 text-indigo-700' },
+    'once': { name: '一次性', color: 'bg-gray-200 text-gray-700' }
+};
+
+// Priority configuration
+const PRIO_CONFIG = {
+    'high': { name: '高', class: 'priority-high', badge: 'bg-red-100 text-red-700 border-red-200', val: 3 },
+    'medium': { name: '中', class: 'priority-medium', badge: 'bg-amber-100 text-amber-700 border-amber-200', val: 2 },
+    'low': { name: '低', class: 'priority-low', badge: 'bg-green-100 text-green-700 border-green-200', val: 1 }
+};
+
+// Default Initial Data
+const defaultData = {
+    characters: [], // { id, name, tasks: [{ taskId, priority, progress }] }
+    serverTasks: [], // { taskId, priority, progress }
+    taskLibrary: [], // { id, name, type, maxCount }
+    lastReset: {
+        daily: null,
+        weekly: null
+    }
+};
+
+class TrackerApp {
+    constructor() {
+        this.data = this.loadData();
+        this.currentView = 'overview';
+        
+        // Active Filters State
+        this.activeFilters = {
+            overview: { type: ['daily', 'weekly', 'once'], prio: ['high', 'medium', 'low'] },
+            dashboard: { type: ['daily', 'weekly', 'once'], prio: ['high', 'medium', 'low'] },
+            server: { type: ['daily', 'weekly', 'once'], prio: ['high', 'medium', 'low'] }
+        };
+        this.libraryFilter = 'all';
+        
+        if (this.data.taskLibrary.length === 0) {
+            this.seedDefaultTasks();
+        }
+
+        this.init();
+    }
+
+    loadData() {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        let parsed = JSON.parse(JSON.stringify(defaultData));
+        if (stored) {
+            try {
+                const raw = JSON.parse(stored);
+                parsed = { ...parsed, ...raw };
+                
+                // Data Migrations
+                parsed.taskLibrary.forEach(t => { if(!t.maxCount) t.maxCount = 1; });
+                parsed.characters.forEach(c => {
+                    c.tasks.forEach(t => {
+                        if (t.progress === undefined) {
+                            t.progress = t.completed ? 1 : 0;
+                        }
+                        delete t.completed;
+                    });
+                });
+                if(!parsed.serverTasks) parsed.serverTasks = [];
+
+            } catch (e) {
+                console.error("Error parsing local storage", e);
+            }
+        }
+        return parsed;
+    }
+
+    saveData() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
+    }
+
+    init() {
+        this.checkResets();
+        this.setupEventListeners();
+        this.render();
+        this.startClock();
+    }
+
+    checkResets(forceType = null) {
+        const now = new Date();
+        const cutoffToday = new Date(now);
+        cutoffToday.setHours(6, 0, 0, 0);
+
+        let currentDailyCycleStart = now < cutoffToday ? 
+            new Date(cutoffToday.getTime() - 24 * 60 * 60 * 1000) : cutoffToday;
+
+        let currentWeeklyCycleStart = new Date(currentDailyCycleStart);
+        let dayOfWeek = currentWeeklyCycleStart.getDay();
+        let daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+        currentWeeklyCycleStart.setDate(currentWeeklyCycleStart.getDate() - daysSinceMonday);
+
+        let modified = false;
+
+        const lastDaily = this.data.lastReset.daily ? new Date(this.data.lastReset.daily) : null;
+        if (forceType === 'daily' || !lastDaily || lastDaily < currentDailyCycleStart) {
+            this.performReset('daily');
+            this.data.lastReset.daily = currentDailyCycleStart.getTime();
+            modified = true;
+        }
+
+        const lastWeekly = this.data.lastReset.weekly ? new Date(this.data.lastReset.weekly) : null;
+        if (forceType === 'weekly' || !lastWeekly || lastWeekly < currentWeeklyCycleStart) {
+            this.performReset('weekly');
+            this.data.lastReset.weekly = currentWeeklyCycleStart.getTime();
+            modified = true;
+        }
+
+        if (modified) this.saveData();
+    }
+
+    performReset(type) {
+        // Reset Character Tasks
+        this.data.characters.forEach(char => {
+            char.tasks.forEach(charTask => {
+                const libTask = this.data.taskLibrary.find(t => t.id === charTask.taskId);
+                if (libTask && libTask.type === type) {
+                    charTask.progress = 0;
+                }
+            });
+        });
+        
+        // Reset Server Tasks
+        this.data.serverTasks.forEach(sTask => {
+            const libTask = this.data.taskLibrary.find(t => t.id === sTask.taskId);
+            if (libTask && libTask.type === type) {
+                sTask.progress = 0;
+            }
+        });
+    }
+
+    setupEventListeners() {
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('tab-active', 'text-blue-600'));
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.add('text-gray-500'));
+                e.target.classList.remove('text-gray-500');
+                e.target.classList.add('tab-active');
+                
+                this.switchView(e.target.dataset.target);
+            });
+        });
+
+        document.querySelectorAll('.filter-cb').forEach(cb => {
+            cb.addEventListener('change', (e) => {
+                const view = e.target.dataset.view;
+                const cat = e.target.dataset.cat;
+                const val = e.target.value;
+                
+                if (e.target.checked) {
+                    if (!this.activeFilters[view][cat].includes(val)) {
+                        this.activeFilters[view][cat].push(val);
+                    }
+                } else {
+                    this.activeFilters[view][cat] = this.activeFilters[view][cat].filter(v => v !== val);
+                }
+                this.render(); // Re-render to apply filter
+            });
+        });
+
+        document.querySelectorAll('.task-filter-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.task-filter-btn').forEach(b => {
+                    b.classList.remove('bg-blue-100', 'text-blue-700');
+                    b.classList.add('text-gray-600', 'hover:bg-gray-200');
+                });
+                e.target.classList.remove('text-gray-600', 'hover:bg-gray-200');
+                e.target.classList.add('bg-blue-100', 'text-blue-700');
+                
+                this.libraryFilter = e.target.dataset.type;
+                this.renderTaskLibrary();
+            });
+        });
+
+        document.getElementById('form-character').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.saveCharacter();
+        });
+    }
+
+    switchView(viewId) {
+        this.currentView = viewId;
+        document.querySelectorAll('.view-section').forEach(sec => sec.classList.add('hidden'));
+        document.getElementById(`view-${viewId}`).classList.remove('hidden');
+        this.render();
+    }
+
+    render() {
+        if (this.currentView === 'overview') this.renderOverview();
+        if (this.currentView === 'dashboard') this.renderDashboard();
+        if (this.currentView === 'server') this.renderServer();
+        if (this.currentView === 'characters') this.renderCharacters();
+        if (this.currentView === 'tasks') this.renderTaskLibrary();
+    }
+
+    renderOverview() {
+        const container = document.getElementById('overview-matrix-container');
+        if (this.data.characters.length === 0) {
+            container.innerHTML = '<div class="text-center py-12 text-gray-500 bg-white rounded-xl shadow-sm border border-gray-200"><i class="fas fa-table text-4xl mb-3 text-gray-300"></i><p>尚未建立任何角色，無法顯示矩陣。</p></div>';
+            return;
+        }
+
+        const filters = this.activeFilters.overview;
+
+        let matrixTasks = this.data.taskLibrary.filter(libTask => {
+            if (!filters.type.includes(libTask.type)) return false;
+
+            // 確保該任務在任一角色身上符合重要度篩選條件才顯示
+            const hasMatchingAssignment = this.data.characters.some(c => {
+                const ct = c.tasks.find(t => t.taskId === libTask.id);
+                return ct && filters.prio.includes(ct.priority);
+            });
+            
+            return hasMatchingAssignment;
+        });
+
+        if (matrixTasks.length === 0) {
+            container.innerHTML = '<div class="text-center py-12 text-gray-500 bg-white rounded-xl shadow-sm border border-gray-200">目前沒有符合條件的任務，或尚未將任何任務指派給角色。</div>';
+            return;
+        }
+
+        // Calculate stats for sorting
+        const taskStats = matrixTasks.map(libTask => {
+            let isAllCompleted = true;
+            let highCount = 0;
+            let charPriorities = {};
+            let assignedCount = 0;
+
+            this.data.characters.forEach(char => {
+                const charTask = char.tasks.find(t => t.taskId === libTask.id);
+                if (charTask) {
+                    assignedCount++;
+                    if (charTask.progress < libTask.maxCount) isAllCompleted = false;
+                    if (charTask.priority === 'high') highCount++;
+                    charPriorities[char.id] = PRIO_CONFIG[charTask.priority].val;
+                } else {
+                    charPriorities[char.id] = -1; // Unassigned
+                }
+            });
+
+            if (assignedCount === 0) isAllCompleted = false;
+            return { libTask, isAllCompleted, highCount, charPriorities, assignedCount };
+        });
+
+        // Sorting Matrix Rows
+        taskStats.sort((a, b) => {
+            if (a.isAllCompleted !== b.isAllCompleted) return a.isAllCompleted ? 1 : -1;
+            if (a.highCount !== b.highCount) return b.highCount - a.highCount;
+            // Tie-breaker by character sequence priority
+            for (let i = 0; i < this.data.characters.length; i++) {
+                const cid = this.data.characters[i].id;
+                const pA = a.charPriorities[cid];
+                const pB = b.charPriorities[cid];
+                if (pA !== pB) return pB - pA;
+            }
+            return 0;
+        });
+
+        let tableHtml = `
+            <div class="overflow-x-auto bg-white rounded-xl shadow-sm border border-gray-200">
+                <table class="min-w-full divide-y divide-gray-200 table-fixed">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th scope="col" class="w-[200px] sm:w-[250px] px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 z-20 border-r border-gray-200 shadow-[1px_0_0_0_#e5e7eb]">任務名稱</th>
+        `;
+        
+        this.data.characters.forEach(char => {
+            tableHtml += `<th scope="col" class="px-2 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider border-l border-gray-200 min-w-[100px] break-words">${char.name}</th>`;
+        });
+        tableHtml += `</tr></thead><tbody class="bg-white divide-y divide-gray-100">`;
+
+        taskStats.forEach(stat => {
+            const libTask = stat.libTask;
+            const typeCfg = TYPE_CONFIG[libTask.type];
+            tableHtml += `
+                <tr class="hover:bg-blue-50/40 transition-colors ${stat.isAllCompleted ? 'opacity-60 bg-gray-50/50' : 'group'}">
+                    <td class="px-4 py-3 text-sm sticky left-0 z-10 border-r border-gray-200 shadow-[1px_0_0_0_#e5e7eb] ${stat.isAllCompleted ? 'bg-gray-50/50' : 'bg-white group-hover:bg-blue-50/40'} transition-colors">
+                        <div class="flex flex-col pr-2">
+                            <span class="font-bold truncate ${stat.isAllCompleted ? 'line-through text-gray-500' : 'text-gray-900'}" title="${libTask.name}">${libTask.name}</span>
+                            <span class="text-[10px] ${typeCfg.color} px-1.5 py-0.5 rounded-sm w-max mt-1">${typeCfg.name}</span>
+                        </div>
+                    </td>
+            `;
+
+            this.data.characters.forEach(char => {
+                const charTask = char.tasks.find(t => t.taskId === libTask.id);
+                if (charTask) {
+                    const isComplete = charTask.progress >= libTask.maxCount;
+                    const prio = charTask.priority;
+                    
+                    // 根據角色自身的優先度條件，決定是否淡化顯示(被過濾掉)
+                    const isFilteredOut = !filters.prio.includes(prio);
+                    
+                    const btnClass = isComplete ? 'bg-gray-100 text-gray-400 border-gray-200 shadow-inner' : 
+                                     prio === 'high' ? 'bg-red-50 text-red-700 border-red-200 shadow-sm' :
+                                     prio === 'medium' ? 'bg-amber-50 text-amber-700 border-amber-200 shadow-sm' :
+                                     'bg-green-50 text-green-700 border-green-200 shadow-sm';
+                    
+                    tableHtml += `
+                        <td class="px-2 py-2 text-center border-l border-gray-100 align-middle ${isFilteredOut ? 'opacity-30' : ''}">
+                            <div class="flex items-center justify-center gap-0 w-full max-w-[85px] mx-auto rounded border overflow-hidden ${btnClass}">
+                                <button onclick="app.changeProgress('character', '${char.id}', '${libTask.id}', -1)" class="w-6 py-1.5 bg-black/5 hover:bg-black/10 transition-colors flex items-center justify-center"><i class="fas fa-minus text-[10px]"></i></button>
+                                <span class="flex-grow text-xs font-bold text-center px-1 tracking-tighter">${charTask.progress}/${libTask.maxCount}</span>
+                                <button onclick="app.changeProgress('character', '${char.id}', '${libTask.id}', 1)" class="w-6 py-1.5 bg-black/5 hover:bg-black/10 transition-colors flex items-center justify-center"><i class="fas fa-plus text-[10px]"></i></button>
+                            </div>
+                        </td>
+                    `;
+                } else {
+                    tableHtml += `<td class="px-2 py-2 text-center border-l border-gray-100 align-middle text-gray-300 text-sm">-</td>`;
+                }
+            });
+            tableHtml += `</tr>`;
+        });
+        tableHtml += `</tbody></table></div>`;
+        container.innerHTML = tableHtml;
+    }
+
+    renderDashboard() {
+        const container = document.getElementById('characters-dashboard');
+        const emptyMsg = document.getElementById('no-characters-msg');
+        
+        if (this.data.characters.length === 0) {
+            container.innerHTML = '';
+            container.appendChild(emptyMsg);
+            emptyMsg.classList.remove('hidden');
+            return;
+        }
+        
+        emptyMsg.classList.add('hidden');
+        container.innerHTML = '';
+
+        this.data.characters.forEach(char => {
+            const filters = this.activeFilters.dashboard;
+            let charTasks = char.tasks.map(ct => {
+                const libTask = this.data.taskLibrary.find(t => t.id === ct.taskId);
+                return { ...ct, libTask };
+            }).filter(t => t.libTask !== undefined);
+
+            charTasks = charTasks.filter(t => {
+                return filters.type.includes(t.libTask.type) && filters.prio.includes(t.priority);
+            });
+
+            charTasks.sort((a, b) => {
+                const aComplete = a.progress >= a.libTask.maxCount;
+                const bComplete = b.progress >= b.libTask.maxCount;
+                if (aComplete !== bComplete) return aComplete ? 1 : -1;
+                return PRIO_CONFIG[b.priority].val - PRIO_CONFIG[a.priority].val;
+            });
+
+            const totalTasks = charTasks.length;
+            const completedTasks = charTasks.filter(t => t.progress >= t.libTask.maxCount).length;
+            const progressPct = totalTasks === 0 ? 0 : Math.round((completedTasks / totalTasks) * 100);
+
+            const card = document.createElement('div');
+            card.className = 'bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden character-card flex flex-col h-full';
+            
+            let tasksHtml = '';
+            if (totalTasks === 0) {
+                tasksHtml = `<div class="p-4 text-center text-sm text-gray-400 italic">目前沒有任務，或被篩選條件隱藏。</div>`;
+            } else {
+                tasksHtml = `<ul class="divide-y divide-gray-100 flex-grow" id="sortable-${char.id}">`;
+                charTasks.forEach(task => {
+                    const isComplete = task.progress >= task.libTask.maxCount;
+                    const typeCfg = TYPE_CONFIG[task.libTask.type];
+                    const prioCfg = PRIO_CONFIG[task.priority];
+                    
+                    const btnClass = isComplete ? 'bg-gray-100 text-gray-400 border-gray-200 shadow-inner' : 
+                                     task.priority === 'high' ? 'bg-red-50 text-red-700 border-red-200 shadow-sm' :
+                                     task.priority === 'medium' ? 'bg-amber-50 text-amber-700 border-amber-200 shadow-sm' :
+                                     'bg-green-50 text-green-700 border-green-200 shadow-sm';
+
+                    tasksHtml += `
+                        <li class="p-3 flex items-center justify-between hover:bg-gray-50 transition-colors border-l-4 border-transparent ${isComplete ? '' : prioCfg.class}">
+                            <div class="flex-grow min-w-0 pr-2">
+                                <div class="flex justify-between items-start">
+                                    <span class="text-sm font-bold ${isComplete ? 'line-through text-gray-400' : 'text-gray-800'} truncate block" title="${task.libTask.name}">
+                                        ${task.libTask.name}
+                                    </span>
+                                </div>
+                                <div class="flex gap-2 mt-1">
+                                    <span class="text-[10px] px-1.5 py-0.5 rounded-sm ${typeCfg.color}">${typeCfg.name}</span>
+                                    <span class="text-[10px] px-1.5 py-0.5 rounded-sm border ${prioCfg.badge}">${prioCfg.name}</span>
+                                </div>
+                            </div>
+                            <div class="shrink-0 flex items-center ${btnClass} rounded border overflow-hidden shadow-sm">
+                                <button onclick="app.changeProgress('character', '${char.id}', '${task.taskId}', -1)" class="px-2 py-1.5 bg-black/5 hover:bg-black/10 transition-colors"><i class="fas fa-minus text-xs"></i></button>
+                                <span class="px-1 text-xs font-bold w-9 text-center tracking-tighter">${task.progress}/${task.libTask.maxCount}</span>
+                                <button onclick="app.changeProgress('character', '${char.id}', '${task.taskId}', 1)" class="px-2 py-1.5 bg-black/5 hover:bg-black/10 transition-colors"><i class="fas fa-plus text-xs"></i></button>
+                            </div>
+                        </li>
+                    `;
+                });
+                tasksHtml += `</ul>`;
+            }
+
+            card.innerHTML = `
+                <div class="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
+                    <div class="flex items-center gap-2">
+                        <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
+                            <i class="fas fa-user text-sm"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-gray-800 leading-tight">${char.name}</h3>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <span class="text-sm font-bold ${progressPct === 100 ? 'text-green-500' : 'text-blue-600'}">${progressPct}%</span>
+                        <div class="w-16 h-1.5 bg-gray-200 rounded-full mt-1 overflow-hidden">
+                            <div class="h-full bg-blue-500 transition-all duration-500 ${progressPct === 100 ? 'bg-green-500' : ''}" style="width: ${progressPct}%"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex-grow overflow-y-auto max-h-[400px]">
+                    ${tasksHtml}
+                </div>
+                <div class="p-2 border-t border-gray-100 bg-gray-50 shrink-0 flex justify-center">
+                    <button onclick="app.showAssignTaskModal('${char.id}', 'character')" class="text-xs text-blue-600 hover:text-blue-800 font-medium px-2 py-1 flex items-center">
+                        <i class="fas fa-plus-circle mr-1"></i> 指派額外事項
+                    </button>
+                </div>
+            `;
+            container.appendChild(card);
+        });
+    }
+
+    renderServer() {
+        const container = document.getElementById('server-tasks-container');
+        const filters = this.activeFilters.server;
+        
+        let tasks = this.data.serverTasks.map(st => {
+            const libTask = this.data.taskLibrary.find(t => t.id === st.taskId);
+            return { ...st, libTask };
+        }).filter(t => t.libTask !== undefined);
+
+        tasks = tasks.filter(t => {
+            return filters.type.includes(t.libTask.type) && filters.prio.includes(t.priority);
+        });
+
+        tasks.sort((a, b) => {
+            const aComplete = a.progress >= a.libTask.maxCount;
+            const bComplete = b.progress >= b.libTask.maxCount;
+            if (aComplete !== bComplete) return aComplete ? 1 : -1;
+            return PRIO_CONFIG[b.priority].val - PRIO_CONFIG[a.priority].val;
+        });
+
+        const totalTasks = tasks.length;
+        const completedTasks = tasks.filter(t => t.progress >= t.libTask.maxCount).length;
+        const progressPct = totalTasks === 0 ? 0 : Math.round((completedTasks / totalTasks) * 100);
+
+        document.getElementById('server-progress-text').textContent = `${progressPct}%`;
+        document.getElementById('server-progress-text').className = `text-2xl font-bold ${progressPct === 100 ? 'text-green-500' : 'text-indigo-600'}`;
+        document.getElementById('server-progress-bar').style.width = `${progressPct}%`;
+        document.getElementById('server-progress-bar').className = `h-full rounded-full transition-all duration-500 ${progressPct === 100 ? 'bg-green-500' : 'bg-indigo-500'}`;
+
+        if (tasks.length === 0) {
+            container.innerHTML = '<div class="text-center py-12 text-gray-500 italic border-t border-gray-100 mt-4 pt-8">目前沒有伺服器共通任務，或被篩選條件隱藏。</div>';
+            return;
+        }
+
+        let html = '<ul class="divide-y divide-gray-100 mt-4 border-t border-gray-100 pt-2">';
+        tasks.forEach(task => {
+            const isComplete = task.progress >= task.libTask.maxCount;
+            const typeCfg = TYPE_CONFIG[task.libTask.type];
+            const prioCfg = PRIO_CONFIG[task.priority];
+            
+            const btnClass = isComplete ? 'bg-gray-100 text-gray-400 border-gray-200 shadow-inner' : 
+                             prioCfg.class.includes('red') ? 'bg-red-50 text-red-700 border-red-200 shadow-sm' :
+                             prioCfg.class.includes('amber') ? 'bg-amber-50 text-amber-700 border-amber-200 shadow-sm' :
+                             'bg-green-50 text-green-700 border-green-200 shadow-sm';
+
+            html += `
+                <li class="py-3 px-2 flex items-center justify-between hover:bg-gray-50 transition-colors border-l-4 border-transparent ${isComplete ? '' : prioCfg.class}">
+                    <div class="flex-grow min-w-0 pr-4">
+                        <span class="text-base font-bold ${isComplete ? 'line-through text-gray-400' : 'text-gray-800'} block truncate">
+                            ${task.libTask.name}
+                        </span>
+                        <div class="flex gap-2 mt-1.5">
+                            <span class="text-xs px-2 py-0.5 rounded-sm ${typeCfg.color}">${typeCfg.name}</span>
+                            <span class="text-xs px-2 py-0.5 rounded-sm border ${prioCfg.badge}">${prioCfg.name}</span>
+                        </div>
+                    </div>
+                    <div class="shrink-0 flex items-center ${btnClass} rounded-lg border overflow-hidden shadow-sm h-[36px]">
+                        <button onclick="app.changeProgress('server', 'server', '${task.taskId}', -1)" class="px-3 h-full bg-black/5 hover:bg-black/10 transition-colors"><i class="fas fa-minus text-sm"></i></button>
+                        <span class="px-2 text-sm font-bold w-12 text-center">${task.progress}/${task.libTask.maxCount}</span>
+                        <button onclick="app.changeProgress('server', 'server', '${task.taskId}', 1)" class="px-3 h-full bg-black/5 hover:bg-black/10 transition-colors"><i class="fas fa-plus text-sm"></i></button>
+                    </div>
+                </li>
+            `;
+        });
+        html += '</ul>';
+        container.innerHTML = html;
+    }
+
+    renderCharacters() {
+        const container = document.getElementById('characters-list');
+        container.innerHTML = '';
+        
+        const btnAdd = document.getElementById('btn-add-char');
+        if (this.data.characters.length >= MAX_CHARACTERS) {
+            btnAdd.classList.add('opacity-50', 'cursor-not-allowed');
+            btnAdd.title = "已達到最高角色數量限制 (6)";
+        } else {
+            btnAdd.classList.remove('opacity-50', 'cursor-not-allowed');
+            btnAdd.title = "";
+        }
+
+        this.data.characters.forEach(char => {
+            const el = document.createElement('div');
+            el.className = 'bg-white rounded-xl shadow-sm border border-gray-200 p-5 flex flex-col items-center relative';
+            el.innerHTML = `
+                <button onclick="app.deleteCharacter('${char.id}')" class="absolute top-3 right-3 text-gray-400 hover:text-red-500 transition-colors">
+                    <i class="fas fa-trash"></i>
+                </button>
+                <div class="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 mb-3 text-2xl">
+                    <i class="fas fa-user"></i>
+                </div>
+                <h3 class="text-lg font-bold text-gray-800">${char.name}</h3>
+                
+                <div class="mt-4 pt-4 border-t border-gray-100 w-full text-center flex justify-around">
+                     <div>
+                        <span class="block text-xl font-bold text-gray-700">${char.tasks.length}</span>
+                        <span class="text-xs text-gray-500">追蹤事項</span>
+                     </div>
+                     <button onclick="app.editCharacter('${char.id}')" class="text-blue-600 hover:text-blue-800 text-sm font-medium self-center px-3 py-1 rounded hover:bg-blue-50 transition-colors">
+                        編輯名稱
+                     </button>
+                </div>
+            `;
+            container.appendChild(el);
+        });
+    }
+
+    changeProgress(targetType, targetId, taskId, delta) {
+        const libTask = this.data.taskLibrary.find(t => t.id === taskId);
+        if (!libTask) return;
+
+        let taskRecord;
+        if (targetType === 'server') {
+            taskRecord = this.data.serverTasks.find(t => t.taskId === taskId);
+        } else {
+            const char = this.data.characters.find(c => c.id === targetId);
+            if (char) taskRecord = char.tasks.find(t => t.taskId === taskId);
+        }
+
+        if (taskRecord) {
+            let newProg = taskRecord.progress + delta;
+            if (newProg < 0) newProg = 0;
+            if (newProg > libTask.maxCount) newProg = libTask.maxCount;
+            
+            taskRecord.progress = newProg;
+            this.saveData();
+            this.render();
+        }
+    }
+
+    completeAllSelected() {
+        this.showDialog({
+            title: '全部完成',
+            message: '確定要將目前畫面上符合篩選條件的所有任務，一鍵標記為最大次數(完成)嗎？',
+            onConfirm: () => {
+                const viewFilters = this.activeFilters[this.currentView === 'overview' ? 'overview' : (this.currentView === 'dashboard' ? 'dashboard' : 'server')];
+                
+                if (this.currentView === 'overview' || this.currentView === 'dashboard') {
+                    this.data.characters.forEach(char => {
+                        char.tasks.forEach(task => {
+                            const libTask = this.data.taskLibrary.find(t => t.id === task.taskId);
+                            if (libTask && viewFilters.type.includes(libTask.type) && viewFilters.prio.includes(task.priority)) {
+                                task.progress = libTask.maxCount;
+                            }
+                        });
+                    });
+                }
+                
+                if (this.currentView === 'overview' || this.currentView === 'server') {
+                    this.data.serverTasks.forEach(task => {
+                        const libTask = this.data.taskLibrary.find(t => t.id === task.taskId);
+                        if (libTask && viewFilters.type.includes(libTask.type) && viewFilters.prio.includes(task.priority)) {
+                            task.progress = libTask.maxCount;
+                        }
+                    });
+                }
+                
+                this.saveData();
+                this.render();
+            }
+        });
+    }
+
+    showModal(modalId) {
+        document.getElementById(modalId).classList.remove('hidden');
+    }
+    
+    closeModal(modalId) {
+        document.getElementById(modalId).classList.add('hidden');
+    }
+
+    showDialog({ title, message, type = 'confirm', confirmText = '確定', cancelText = '取消', isDanger = false, inputPlaceholder = '', onConfirm }) {
+        document.getElementById('dialog-title').textContent = title;
+        document.getElementById('dialog-message').innerText = message;
+        
+        const inputContainer = document.getElementById('dialog-input-container');
+        const inputField = document.getElementById('dialog-input');
+        const btnCancel = document.getElementById('btn-dialog-cancel');
+        const btnConfirm = document.getElementById('btn-dialog-confirm');
+
+        if (type === 'prompt') {
+            inputContainer.classList.remove('hidden');
+            inputField.value = '';
+            inputField.placeholder = inputPlaceholder;
+        } else {
+            inputContainer.classList.add('hidden');
+        }
+
+        if (type === 'alert') {
+            btnCancel.classList.add('hidden');
+        } else {
+            btnCancel.classList.remove('hidden');
+            btnCancel.textContent = cancelText;
+        }
+
+        btnConfirm.textContent = confirmText;
+        btnConfirm.className = `px-4 py-2 text-white rounded-lg text-sm font-medium transition-colors ${isDanger ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`;
+
+        btnCancel.onclick = () => this.closeModal('modal-dialog');
+        btnConfirm.onclick = () => {
+            if (type === 'prompt') {
+                if (onConfirm) onConfirm(inputField.value);
+            } else {
+                if (onConfirm) onConfirm();
+            }
+            this.closeModal('modal-dialog');
+        };
+
+        this.showModal('modal-dialog');
+    }
+
+    showAddCharacterModal() {
+        if (this.data.characters.length >= MAX_CHARACTERS) {
+            this.showDialog({ title: '限制', message: '已達到最高角色數量限制 (6)', type: 'alert' });
+            return;
+        }
+        document.getElementById('modal-char-title').textContent = '新增角色';
+        document.getElementById('form-character').reset();
+        document.getElementById('char-id').value = '';
+        this.showModal('modal-character');
+    }
+
+    editCharacter(id) {
+        const char = this.data.characters.find(c => c.id === id);
+        if(!char) return;
+        document.getElementById('modal-char-title').textContent = '編輯角色';
+        document.getElementById('char-id').value = char.id;
+        document.getElementById('char-name').value = char.name;
+        this.showModal('modal-character');
+    }
+
+    saveCharacter() {
+        const id = document.getElementById('char-id').value;
+        const name = document.getElementById('char-name').value.trim();
+
+        if (!name) return;
+
+        if (id) {
+            const char = this.data.characters.find(c => c.id === id);
+            char.name = name;
+        } else {
+            this.data.characters.push({
+                id: 'char_' + Date.now(),
+                name: name,
+                tasks: []
+            });
+        }
+
+        this.saveData();
+        this.closeModal('modal-character');
+        this.render();
+    }
+
+    deleteCharacter(id) {
+        this.showDialog({
+            title: '刪除角色',
+            message: '確定要刪除這個角色嗎？相關任務紀錄將一併刪除。',
+            isDanger: true,
+            onConfirm: () => {
+                this.data.characters = this.data.characters.filter(c => c.id !== id);
+                this.saveData();
+                this.render();
+            }
+        });
+    }
+
+    renderTaskCharacterAssignments(taskId = null) {
+        const container = document.getElementById('task-character-assignments');
+        container.innerHTML = '';
+        
+        // Always render Server as the first option
+        let isServerAssigned = false;
+        let serverPrio = 'medium';
+        if (taskId) {
+            const sTask = this.data.serverTasks.find(t => t.taskId === taskId);
+            if (sTask) {
+                isServerAssigned = true;
+                serverPrio = sTask.priority;
+            }
+        }
+
+        const serverRow = document.createElement('div');
+        serverRow.className = 'flex items-center justify-between p-2 mb-2 bg-indigo-50 rounded border border-indigo-200 transition-colors shadow-sm';
+        serverRow.innerHTML = `
+            <label class="flex items-center gap-2 cursor-pointer flex-grow select-none">
+                <input type="checkbox" id="cb-assign-server" class="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500" ${isServerAssigned ? 'checked' : ''}>
+                <span class="text-sm font-bold text-indigo-900"><i class="fas fa-server mr-1 text-indigo-400"></i> 伺服器共通</span>
+            </label>
+            <select id="sel-prio-server" class="text-xs border border-indigo-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white ${isServerAssigned ? '' : 'opacity-50'}" ${isServerAssigned ? '' : 'disabled'}>
+                <option value="high" ${serverPrio === 'high' ? 'selected' : ''}>高優先度</option>
+                <option value="medium" ${serverPrio === 'medium' ? 'selected' : ''}>中優先度</option>
+                <option value="low" ${serverPrio === 'low' ? 'selected' : ''}>低優先度</option>
+            </select>
+        `;
+        const sCb = serverRow.querySelector('#cb-assign-server');
+        const sSel = serverRow.querySelector('#sel-prio-server');
+        sCb.addEventListener('change', (e) => {
+            sSel.disabled = !e.target.checked;
+            e.target.checked ? sSel.classList.remove('opacity-50') : sSel.classList.add('opacity-50');
+        });
+        container.appendChild(serverRow);
+
+        if (this.data.characters.length === 0) {
+            const p = document.createElement('p');
+            p.className = "text-sm text-gray-500 italic p-2 border-t border-gray-200 mt-2";
+            p.textContent = "尚未建立任何一般角色";
+            container.appendChild(p);
+            return;
+        }
+
+        this.data.characters.forEach(char => {
+            let isAssigned = false;
+            let currentPrio = 'medium';
+            
+            if (taskId) {
+                const charTask = char.tasks.find(t => t.taskId === taskId);
+                if (charTask) {
+                    isAssigned = true;
+                    currentPrio = charTask.priority;
+                }
+            }
+            
+            const el = document.createElement('div');
+            el.className = 'flex items-center justify-between p-2 hover:bg-gray-100 rounded border border-gray-200 bg-white transition-colors';
+            el.innerHTML = `
+                <label class="flex items-center gap-2 cursor-pointer flex-grow select-none">
+                    <input type="checkbox" class="task-assign-cb w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" data-char-id="${char.id}" ${isAssigned ? 'checked' : ''}>
+                    <span class="text-sm font-medium text-gray-800">${char.name}</span>
+                </label>
+                <select class="task-prio-sel text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white ${isAssigned ? '' : 'opacity-50'}" data-char-id="${char.id}" ${isAssigned ? '' : 'disabled'}>
+                    <option value="high" ${currentPrio === 'high' ? 'selected' : ''}>高優先度</option>
+                    <option value="medium" ${currentPrio === 'medium' ? 'selected' : ''}>中優先度</option>
+                    <option value="low" ${currentPrio === 'low' ? 'selected' : ''}>低優先度</option>
+                </select>
+            `;
+            
+            const cb = el.querySelector('.task-assign-cb');
+            const sel = el.querySelector('.task-prio-sel');
+            cb.addEventListener('change', (e) => {
+                sel.disabled = !e.target.checked;
+                if(e.target.checked) {
+                    sel.classList.remove('opacity-50');
+                } else {
+                    sel.classList.add('opacity-50');
+                }
+            });
+            
+            container.appendChild(el);
+        });
+    }
+
+    showAddTaskModal() {
+        document.getElementById('modal-task-title').textContent = '新增事項';
+        document.getElementById('form-task').reset();
+        document.getElementById('task-id').value = '';
+        document.getElementById('task-max-count').value = '1';
+        
+        this.renderTaskCharacterAssignments();
+        
+        this.showModal('modal-task');
+    }
+
+    editTask(id) {
+        const task = this.data.taskLibrary.find(t => t.id === id);
+        if(!task) return;
+        
+        document.getElementById('modal-task-title').textContent = '編輯事項';
+        document.getElementById('task-id').value = task.id;
+        document.getElementById('task-name').value = task.name;
+        document.getElementById('task-type').value = task.type;
+        document.getElementById('task-max-count').value = task.maxCount || 1;
+        
+        this.renderTaskCharacterAssignments(task.id);
+
+        this.showModal('modal-task');
+    }
+
+    saveTask() {
+        const form = document.getElementById('form-task');
+        if(!form.checkValidity()) {
+            form.reportValidity();
+            return;
+        }
+
+        const id = document.getElementById('task-id').value;
+        const name = document.getElementById('task-name').value.trim();
+        const type = document.getElementById('task-type').value;
+        const maxCount = parseInt(document.getElementById('task-max-count').value) || 1;
+        
+        let taskObj;
+
+        if (id) {
+            taskObj = this.data.taskLibrary.find(t => t.id === id);
+            taskObj.name = name;
+            taskObj.type = type;
+            taskObj.maxCount = maxCount;
+        } else {
+            taskObj = {
+                id: 'task_' + Date.now(),
+                name: name,
+                type: type,
+                maxCount: maxCount
+            };
+            this.data.taskLibrary.push(taskObj);
+        }
+
+        // Handle Server Assignment
+        const serverCb = document.getElementById('cb-assign-server');
+        const serverSel = document.getElementById('sel-prio-server');
+        if (serverCb) {
+            const sTaskIndex = this.data.serverTasks.findIndex(t => t.taskId === taskObj.id);
+            if (serverCb.checked) {
+                if (sTaskIndex > -1) {
+                    this.data.serverTasks[sTaskIndex].priority = serverSel.value;
+                } else {
+                    this.data.serverTasks.push({ taskId: taskObj.id, priority: serverSel.value, progress: 0 });
+                }
+            } else {
+                if (sTaskIndex > -1) this.data.serverTasks.splice(sTaskIndex, 1);
+            }
+        }
+
+        // Handle Characters Assignments
+        const checkboxes = document.querySelectorAll('.task-assign-cb');
+        checkboxes.forEach(cb => {
+            const charId = cb.dataset.charId;
+            const isChecked = cb.checked;
+            const sel = document.querySelector(`.task-prio-sel[data-char-id="${charId}"]`);
+            const prio = sel.value;
+            
+            const char = this.data.characters.find(c => c.id === charId);
+            if (char) {
+                const taskIndex = char.tasks.findIndex(t => t.taskId === taskObj.id);
+                if (isChecked) {
+                    if (taskIndex > -1) {
+                        char.tasks[taskIndex].priority = prio;
+                    } else {
+                        char.tasks.push({ taskId: taskObj.id, priority: prio, progress: 0 });
+                    }
+                } else {
+                    if (taskIndex > -1) {
+                        char.tasks.splice(taskIndex, 1);
+                    }
+                }
+            }
+        });
+
+        this.saveData();
+        this.closeModal('modal-task');
+        this.render();
+    }
+
+    deleteTask(id) {
+        this.showDialog({
+            title: '刪除事項',
+            message: '確定要從事項庫中刪除嗎？所有角色及伺服器身上的此任務也會被一併移除。',
+            isDanger: true,
+            onConfirm: () => {
+                this.data.taskLibrary = this.data.taskLibrary.filter(t => t.id !== id);
+                this.data.serverTasks = this.data.serverTasks.filter(t => t.taskId !== id);
+                this.data.characters.forEach(char => {
+                    char.tasks = char.tasks.filter(t => t.taskId !== id);
+                });
+                this.saveData();
+                this.render();
+            }
+        });
+    }
+
+    showAssignTaskModal(targetId, targetType = 'character') {
+        let name, assignedIds;
+        if (targetType === 'server') {
+            name = '伺服器共通';
+            assignedIds = this.data.serverTasks.map(t => t.taskId);
+        } else {
+            const char = this.data.characters.find(c => c.id === targetId);
+            if(!char) return;
+            name = char.name;
+            assignedIds = char.tasks.map(t => t.taskId);
+        }
+        
+        document.getElementById('assign-char-name').textContent = name;
+        const listContainer = document.getElementById('available-tasks-list');
+        listContainer.innerHTML = '';
+
+        let count = 0;
+        this.data.taskLibrary.forEach(task => {
+            const isAssigned = assignedIds.includes(task.id);
+            const typeCfg = TYPE_CONFIG[task.type];
+            
+            const el = document.createElement('div');
+            el.className = 'flex justify-between items-center p-3 border border-gray-100 rounded-lg hover:bg-gray-50';
+            el.innerHTML = `
+                <div>
+                    <div class="text-sm font-medium text-gray-800">${task.name} <span class="text-xs text-gray-400 font-normal ml-1">最大次數: ${task.maxCount}</span></div>
+                    <div class="text-[10px] ${typeCfg.color} px-1.5 py-0.5 rounded inline-block mt-1">${typeCfg.name}</div>
+                </div>
+                <button onclick="app.toggleSpecificTask('${targetId}', '${task.id}', '${targetType}')" 
+                        class="px-3 py-1.5 rounded text-xs font-bold transition-colors ${isAssigned ? 'bg-red-50 text-red-600 border border-red-200 hover:bg-red-100' : 'bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100'}">
+                    ${isAssigned ? '移除' : '加入清單'}
+                </button>
+            `;
+            listContainer.appendChild(el);
+            count++;
+        });
+
+        if(count === 0) listContainer.innerHTML = '<p class="text-sm text-gray-500">事項庫中沒有任務。</p>';
+
+        this.showModal('modal-assign-task');
+    }
+
+    toggleSpecificTask(targetId, taskId, targetType) {
+        if (targetType === 'server') {
+            const idx = this.data.serverTasks.findIndex(t => t.taskId === taskId);
+            if (idx > -1) {
+                this.data.serverTasks.splice(idx, 1);
+            } else {
+                this.data.serverTasks.push({ taskId: taskId, priority: 'medium', progress: 0 });
+            }
+        } else {
+            const char = this.data.characters.find(c => c.id === targetId);
+            if(!char) return;
+
+            const idx = char.tasks.findIndex(t => t.taskId === taskId);
+            if (idx > -1) {
+                char.tasks.splice(idx, 1);
+            } else {
+                char.tasks.push({ taskId: taskId, priority: 'medium', progress: 0 });
+            }
+        }
+        
+        this.saveData();
+        this.showAssignTaskModal(targetId, targetType); 
+        this.render();
+    }
+
+    showSettingsModal() {
+        this.showModal('modal-settings');
+    }
+
+    manualReset(type) {
+        this.showDialog({
+            title: '手動重置',
+            message: `確定要強制重置所有角色及伺服器的【${type === 'daily' ? '每日' : '每週'}】任務嗎？`,
+            isDanger: true,
+            onConfirm: () => {
+                this.performReset(type);
+                this.saveData();
+                this.render();
+                this.closeModal('modal-settings');
+                this.showDialog({ title: '完成', message: '重置完成。', type: 'alert' });
+            }
+        });
+    }
+
+    clearAllData() {
+        const code = Math.floor(1000 + Math.random() * 9000).toString();
+        this.showDialog({
+            title: '清除所有資料',
+            message: `警告：這將會清除所有角色與事項庫資料，且無法復原！\n請輸入確認碼以繼續: ${code}`,
+            type: 'prompt',
+            isDanger: true,
+            inputPlaceholder: '輸入確認碼',
+            onConfirm: (val) => {
+                if (val === code) {
+                    localStorage.removeItem(STORAGE_KEY);
+                    this.data = JSON.parse(JSON.stringify(defaultData));
+                    this.seedDefaultTasks();
+                    this.saveData();
+                    this.render();
+                    this.closeModal('modal-settings');
+                    this.showDialog({ title: '完成', message: '資料已全部清除。', type: 'alert' });
+                } else {
+                    this.showDialog({ title: '錯誤', message: '確認碼不正確，取消操作。', type: 'alert', isDanger: true });
+                }
+            }
+        });
+    }
+
+    seedDefaultTasks() {
+        const defaults = [
+            { id: 't1', name: '每日兼職', type: 'daily', maxCount: 1 },
+            { id: 't2', name: '首領討伐 (宗師)', type: 'daily', maxCount: 1 },
+            { id: 't3', name: '每日探險/迷宮', type: 'daily', maxCount: 1 },
+            { id: 't4', name: '採集材料(木柴/羊毛)', type: 'daily', maxCount: 5 },
+            { id: 't5', name: '每週公會任務', type: 'weekly', maxCount: 1 },
+            { id: 't6', name: '夢幻萊比地下城', type: 'weekly', maxCount: 1 }
+        ];
+        this.data.taskLibrary = defaults;
+    }
+
+    startClock() {
+        const updateClock = () => {
+            const now = new Date();
+            let nextDaily = new Date(now);
+            if (now.getHours() >= 6) {
+                nextDaily.setDate(nextDaily.getDate() + 1);
+            }
+            nextDaily.setHours(6, 0, 0, 0);
+
+            const diff = nextDaily - now;
+            const h = Math.floor(diff / (1000 * 60 * 60));
+            const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+            
+            document.getElementById('next-reset-time').textContent = `${h}小時 ${m}分`;
+        };
+        updateClock();
+        setInterval(updateClock, 60000); 
+    }
+}
+
+// Initialize Application
+const app = new TrackerApp();
+
+</script>
+</body>
+</html>
