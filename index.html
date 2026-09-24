@@ -123,11 +123,6 @@
 
         <div id="characters-dashboard" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <!-- Character Task Cards will be rendered here -->
-            <div class="col-span-full text-center py-12 text-gray-500 hidden" id="no-characters-msg">
-                <i class="fas fa-users-slash text-4xl mb-3 text-gray-300"></i>
-                <p>尚未建立任何角色。請前往「角色管理」新增角色。</p>
-                <button onclick="document.querySelector('[data-target=characters]').click()" class="mt-4 text-blue-600 hover:underline">前往建立</button>
-            </div>
         </div>
     </section>
 
@@ -426,10 +421,6 @@ class TrackerApp {
             server: { type: ['daily', 'weekly', 'once'], prio: ['high', 'medium', 'low'] }
         };
         this.libraryFilter = 'all';
-        
-        if (this.data.taskLibrary.length === 0) {
-            this.seedDefaultTasks();
-        }
 
         this.init();
     }
@@ -455,10 +446,19 @@ class TrackerApp {
                         if (t.progress === undefined) {
                             t.progress = t.completed ? 1 : 0;
                         }
+                        // 防呆修復：舊任務若缺乏優先度，則自動補上預設值，防止排序系統崩潰
+                        if (!t.priority) {
+                            t.priority = 'medium';
+                        }
                         delete t.completed;
                     });
                 });
+                
                 if(!parsed.serverTasks) parsed.serverTasks = [];
+                parsed.serverTasks.forEach(t => {
+                    if (t.progress === undefined) t.progress = 0;
+                    if (!t.priority) t.priority = 'medium';
+                });
 
             } catch (e) {
                 console.error("Error parsing local storage", e);
@@ -539,6 +539,18 @@ class TrackerApp {
             }
         });
 
+        // 綁定全域點擊事件 (Event Delegation)，解決動態生成的元素無法觸發 onclick 的問題
+        document.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-action]');
+            if (!btn) return;
+            
+            const action = btn.dataset.action;
+            if (action === 'edit-task') this.editTask(btn.dataset.id);
+            else if (action === 'delete-task') this.deleteTask(btn.dataset.id);
+            else if (action === 'edit-character') this.editCharacter(btn.dataset.id);
+            else if (action === 'delete-character') this.deleteCharacter(btn.dataset.id);
+        });
+
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('tab-active', 'text-blue-600'));
@@ -597,12 +609,12 @@ class TrackerApp {
     }
 
     render() {
-        // 全域同步渲染：確保任何進度變動，都會同時更新到所有隱藏或顯示中的頁籤
-        this.renderOverview();
-        this.renderDashboard();
-        this.renderServer();
-        this.renderCharacters();
-        this.renderTaskLibrary();
+        // 全域同步渲染：加入防呆機制(try-catch)，確保即使單一區塊資料異常，也不會導致全畫面停擺
+        try { this.renderOverview(); } catch (e) { console.error('Overview render error:', e); }
+        try { this.renderDashboard(); } catch (e) { console.error('Dashboard render error:', e); }
+        try { this.renderServer(); } catch (e) { console.error('Server render error:', e); }
+        try { this.renderCharacters(); } catch (e) { console.error('Characters render error:', e); }
+        try { this.renderTaskLibrary(); } catch (e) { console.error('TaskLibrary render error:', e); }
     }
 
     renderOverview() {
@@ -644,7 +656,8 @@ class TrackerApp {
                     assignedCount++;
                     if (charTask.progress < libTask.maxCount) isAllCompleted = false;
                     if (charTask.priority === 'high') highCount++;
-                    charPriorities[char.id] = PRIO_CONFIG[charTask.priority].val;
+                    // 安全讀取設定檔，防禦未定義的狀態
+                    charPriorities[char.id] = PRIO_CONFIG[charTask.priority] ? PRIO_CONFIG[charTask.priority].val : 2;
                 } else {
                     charPriorities[char.id] = -1; // Unassigned
                 }
@@ -729,16 +742,18 @@ class TrackerApp {
 
     renderDashboard() {
         const container = document.getElementById('characters-dashboard');
-        const emptyMsg = document.getElementById('no-characters-msg');
         
         if (this.data.characters.length === 0) {
-            container.innerHTML = '';
-            container.appendChild(emptyMsg);
-            emptyMsg.classList.remove('hidden');
+            container.innerHTML = `
+                <div class="col-span-full text-center py-12 text-gray-500">
+                    <i class="fas fa-users-slash text-4xl mb-3 text-gray-300"></i>
+                    <p>尚未建立任何角色。請前往「角色管理」新增角色。</p>
+                    <button onclick="document.querySelector('[data-target=characters]').click()" class="mt-4 text-blue-600 hover:underline">前往建立</button>
+                </div>
+            `;
             return;
         }
         
-        emptyMsg.classList.add('hidden');
         container.innerHTML = '';
 
         this.data.characters.forEach(char => {
@@ -756,7 +771,10 @@ class TrackerApp {
                 const aComplete = a.progress >= a.libTask.maxCount;
                 const bComplete = b.progress >= b.libTask.maxCount;
                 if (aComplete !== bComplete) return aComplete ? 1 : -1;
-                return PRIO_CONFIG[b.priority].val - PRIO_CONFIG[a.priority].val;
+                
+                const pA = PRIO_CONFIG[a.priority] ? PRIO_CONFIG[a.priority].val : 2;
+                const pB = PRIO_CONFIG[b.priority] ? PRIO_CONFIG[b.priority].val : 2;
+                return pB - pA;
             });
 
             const totalTasks = charTasks.length;
@@ -852,7 +870,10 @@ class TrackerApp {
             const aComplete = a.progress >= a.libTask.maxCount;
             const bComplete = b.progress >= b.libTask.maxCount;
             if (aComplete !== bComplete) return aComplete ? 1 : -1;
-            return PRIO_CONFIG[b.priority].val - PRIO_CONFIG[a.priority].val;
+            
+            const pA = PRIO_CONFIG[a.priority] ? PRIO_CONFIG[a.priority].val : 2;
+            const pB = PRIO_CONFIG[b.priority] ? PRIO_CONFIG[b.priority].val : 2;
+            return pB - pA;
         });
 
         const totalTasks = tasks.length;
@@ -920,24 +941,29 @@ class TrackerApp {
             const el = document.createElement('div');
             el.className = 'bg-white rounded-xl shadow-sm border border-gray-200 p-5 flex flex-col items-center relative';
             el.innerHTML = `
-                <button onclick="app.deleteCharacter('${char.id}')" class="absolute top-3 right-3 text-gray-400 hover:text-red-500 transition-colors">
+                <button class="btn-del-char absolute top-3 right-3 text-gray-400 hover:text-red-500 transition-colors">
                     <i class="fas fa-trash"></i>
                 </button>
                 <div class="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 mb-3 text-2xl">
                     <i class="fas fa-user"></i>
                 </div>
-                <h3 class="text-lg font-bold text-gray-800">${char.name}</h3>
+                <h3 class="text-lg font-bold text-gray-800 name-display"></h3>
                 
                 <div class="mt-4 pt-4 border-t border-gray-100 w-full text-center flex justify-around">
                      <div>
                         <span class="block text-xl font-bold text-gray-700">${char.tasks.length}</span>
                         <span class="text-xs text-gray-500">追蹤事項</span>
                      </div>
-                     <button onclick="app.editCharacter('${char.id}')" class="text-blue-600 hover:text-blue-800 text-sm font-medium self-center px-3 py-1 rounded hover:bg-blue-50 transition-colors">
+                     <button class="btn-edit-char text-blue-600 hover:text-blue-800 text-sm font-medium self-center px-3 py-1 rounded hover:bg-blue-50 transition-colors">
                         編輯名稱
                      </button>
                 </div>
             `;
+            // 使用更安全的資料綁定方式，並套用嚴謹的事件監聽
+            el.querySelector('.name-display').textContent = char.name;
+            el.querySelector('.btn-del-char').addEventListener('click', () => this.deleteCharacter(char.id));
+            el.querySelector('.btn-edit-char').addEventListener('click', () => this.editCharacter(char.id));
+            
             container.appendChild(el);
         });
     }
@@ -976,7 +1002,7 @@ class TrackerApp {
             el.innerHTML = `
                 <div class="flex-grow">
                     <div class="flex items-center gap-2">
-                        <h4 class="text-base font-bold text-gray-900">${task.name}</h4>
+                        <h4 class="text-base font-bold text-gray-900 task-name-display"></h4>
                         <span class="text-[10px] ${typeCfg.color} px-1.5 py-0.5 rounded-sm">${typeCfg.name}</span>
                     </div>
                     <div class="text-xs text-gray-500 mt-1 flex gap-3">
@@ -985,14 +1011,19 @@ class TrackerApp {
                     </div>
                 </div>
                 <div class="flex gap-2 shrink-0">
-                    <button onclick="app.editTask('${task.id}')" class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-blue-200 bg-white shadow-sm">
+                    <button class="btn-edit-task p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-blue-200 bg-white shadow-sm">
                         <i class="fas fa-edit mr-1"></i>編輯
                     </button>
-                    <button onclick="app.deleteTask('${task.id}')" class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-red-200 bg-white shadow-sm">
+                    <button class="btn-del-task p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-red-200 bg-white shadow-sm">
                         <i class="fas fa-trash"></i>
                     </button>
                 </div>
             `;
+            // 使用更安全的資料綁定方式，並套用嚴謹的事件監聽
+            el.querySelector('.task-name-display').textContent = task.name;
+            el.querySelector('.btn-edit-task').addEventListener('click', () => this.editTask(task.id));
+            el.querySelector('.btn-del-task').addEventListener('click', () => this.deleteTask(task.id));
+            
             container.appendChild(el);
         });
     }
@@ -1063,7 +1094,7 @@ class TrackerApp {
 
     showDialog({ title, message, type = 'confirm', confirmText = '確定', cancelText = '取消', isDanger = false, inputPlaceholder = '', onConfirm }) {
         document.getElementById('dialog-title').textContent = title;
-        document.getElementById('dialog-message').innerText = message;
+        document.getElementById('dialog-message').textContent = message;
         
         const inputContainer = document.getElementById('dialog-input-container');
         const inputField = document.getElementById('dialog-input');
@@ -1090,12 +1121,15 @@ class TrackerApp {
 
         btnCancel.onclick = () => this.closeModal('modal-dialog');
         btnConfirm.onclick = () => {
+            const val = inputField.value; // 先記錄輸入的值
+            this.closeModal('modal-dialog'); // 先關閉目前的對話框
+            
+            // 再執行後續動作，確保新彈出的對話框不會被關閉
             if (type === 'prompt') {
-                if (onConfirm) onConfirm(inputField.value);
+                if (onConfirm) onConfirm(val);
             } else {
                 if (onConfirm) onConfirm();
             }
-            this.closeModal('modal-dialog');
         };
 
         this.showModal('modal-dialog');
@@ -1457,7 +1491,6 @@ class TrackerApp {
                 if (val === code) {
                     localStorage.removeItem(STORAGE_KEY);
                     this.data = JSON.parse(JSON.stringify(defaultData));
-                    this.seedDefaultTasks();
                     this.saveData();
                     this.render();
                     this.closeModal('modal-settings');
@@ -1467,18 +1500,6 @@ class TrackerApp {
                 }
             }
         });
-    }
-
-    seedDefaultTasks() {
-        const defaults = [
-            { id: 't1', name: '每日兼職', type: 'daily', maxCount: 1 },
-            { id: 't2', name: '首領討伐 (宗師)', type: 'daily', maxCount: 1 },
-            { id: 't3', name: '每日探險/迷宮', type: 'daily', maxCount: 1 },
-            { id: 't4', name: '採集材料(木柴/羊毛)', type: 'daily', maxCount: 5 },
-            { id: 't5', name: '每週公會任務', type: 'weekly', maxCount: 1 },
-            { id: 't6', name: '夢幻萊比地下城', type: 'weekly', maxCount: 1 }
-        ];
-        this.data.taskLibrary = defaults;
     }
 
     startClock() {
